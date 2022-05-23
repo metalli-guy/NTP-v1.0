@@ -1,0 +1,85 @@
+#include "EthernetInterface.h"
+#include "LWIPStack.h"
+#include "mbed.h"
+#include <SocketAddress.h>
+#include <netdb.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <time.h>
+#define NTP_TIMESTAMP_DELTA 2208978000
+#define MILLIS_CONVERSION_CONSTANT 0.00000023283064365386962890625
+#define IP "192.168.2.240"
+#define GATEWAY "192.168.2.1"
+#define MASK "255.255.255.0"
+#define LI(packet) (uint8_t)((packet.li_vn_mode & 0xC0) >> 6)
+#define VN(packet) (uint8_t)((packet.li_vn_mode & 0x38) >> 3)
+#define MODE(packet) (uint8_t)((packet.li_vn_mode & 0x07) >> 0)
+#define BLINKING_RATE 1s
+DigitalOut led(LED1);
+EthernetInterface net;
+typedef struct {
+  uint8_t li_vn_mode;
+  uint8_t stratum;
+  uint8_t poll;
+  uint8_t precision;
+  uint32_t rootDelay;
+  uint32_t rootDispersion;
+  uint32_t refId;
+  uint32_t refTm_s;
+  uint32_t refTm_f;
+  uint32_t origTm_s;
+  uint32_t origTm_f;
+  uint32_t rxTm_s;
+  uint32_t rxTm_f;
+  uint32_t txTm_s;
+  uint32_t txTm_f;
+} ntp_packet;
+ntp_packet packet = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+int main() {
+  memset(&packet, 0, sizeof(ntp_packet));
+  *((char *)&packet + 0) = 0x1b;
+  SocketAddress sockAddr;
+  int i = net.set_network(IP, MASK, GATEWAY);
+  // printf("set IP status: %i \r\n", i);
+  i = net.connect();
+  // printf("connect status: %i \r\n", i);
+  net.get_ip_address(&sockAddr);
+  // printf("IP address is: %s\n",
+  //       sockAddr.get_ip_address() ? sockAddr.get_ip_address() : "No IP");
+  UDPSocket sock;
+  sock.open(&net);
+  net.gethostbyname("tr.pool.ntp.org", &sockAddr);
+  sockAddr.set_port(123);
+  if (0 > sock.sendto(sockAddr, (char *)&packet, sizeof(ntp_packet))) {
+    printf("Error sending data\n");
+    return -1;
+  }
+  ntp_packet in_data;
+  // while (1) {
+  sock.recvfrom(&sockAddr, (char *)&packet, sizeof(ntp_packet));
+  packet.txTm_s = ntohl(packet.txTm_s);
+  packet.txTm_f = ntohl(packet.txTm_f);
+  set_time(packet.txTm_s);
+  char buffer[32];
+  time_t txTm = (time_t)(packet.txTm_s - NTP_TIMESTAMP_DELTA);
+  uint32_t txTm_millis = (packet.txTm_f * MILLIS_CONVERSION_CONSTANT);
+  strftime(buffer, 32, "%a,%d %B %Y %H:%M:%S", localtime(&txTm));
+  printf("Time as a custom formatted string = %s:%u\n", buffer, txTm_millis);
+  led = !led;
+  // ThisThread::sleep_for(BLINKING_RATE);
+  sock.close();
+  ntp_packet packet = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+  //}
+  net.disconnect();
+  //return 0;
+  //while (true) {
+   // Timer t;
+   // t.start();
+   // printf("Hello World!\n");
+   // t.stop();
+   // printf("The time taken was %llu milliseconds\n",
+   //        duration_cast<std::chrono::milliseconds>(t.elapsed_time()).count());
+ // }
+}
