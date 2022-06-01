@@ -1,2 +1,0 @@
-# NTP
-NTP tests
